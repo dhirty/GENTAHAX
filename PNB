@@ -1,0 +1,298 @@
+--[[
+-- =============================================
+-- KONFIGURASI UTAMA
+-- =============================================
+CORE = {
+    Item_ID = 340,               -- ID item yang akan di-place & di-punch
+    Collect_Range = 3,           -- Jangkauan collect item (kiri/kanan dari pemain)
+    Target_Amount = 190          -- Batas maksimal block sebelum drop
+}
+
+TILE = {
+    X = 2,                       -- Offset horizontal (kiri/kanan) untuk place & punch
+    Y = -1                       -- Offset vertikal (di atas pemain)
+}
+
+-- KONFIGURASI DROP
+DROP = {
+    Target_Pos = 20,
+    Drop_Index = 5
+}
+
+-- KONFIGURASI WORLD
+Farm_World = "farmworld|pass"              -- World tempat PNB (tempat menanam & memanen)
+World_Take_List = {"take1|pass", "take2|pass"}  -- Daftar world untuk mengambil block (stok)
+World_Drop = "dropworld|pass"              -- World untuk drop (jika Use_World_Drop = true)
+Use_World_Take = true     -- true: ambil block dari World_Take_List; false: ambil dari world yang sama
+Use_World_Drop = true     -- true: drop ke World_Drop; false: drop di world yang sama
+
+-- DELAY
+DELAY = {
+    Warp = 5000,
+    Move = 300,
+    Place = 200,
+    Break = 180,
+    Collect = 10
+}
+
+]]
+-- STATE (Jangan diubah manual)
+state = {
+    warpAttempts = 0,
+    Max_Warp_Attempts = 5,
+    paused = false,
+    World_Index = 1,
+    Farm_World = Farm_World,
+    triesThreshold = 10          -- Maksimal percobaan punch per tile
+}
+
+-- Simpan posisi awal saat script dimulai
+local startX = math.floor(getLocal().pos.x / 32)
+local startY = math.floor(getLocal().pos.y / 32)
+
+-- =============================================
+-- FUNGSI DASAR
+-- =============================================
+function send(txt)
+    local var = {}
+    var[0] = "OnTextOverlay"
+    var[1] = txt
+    sendVariant(var)
+end
+
+function inventory(itemId)
+    local total = 0
+    local inv = getInventory()
+    if not inv then return 0 end
+    for _, v in ipairs(inv) do
+        if v.id == itemId then
+            total = total + v.amount
+        end
+    end
+    return total
+end
+
+function put(x, y)
+    requestTileChange(x, y, CORE.Item_ID)
+    sleep(DELAY.Place)
+end
+
+function punch(x, y)
+    requestTileChange(x, y, 18)
+    sleep(DELAY.Break)
+end
+
+function collect()
+    local px = math.floor(getLocal().pos.x / 32)
+    local py = math.floor(getLocal().pos.y / 32)
+    local targetY = py + TILE.Y
+
+    for _, o in ipairs(getWorldObject() or {}) do
+        local ox = math.floor(o.pos.x / 32)
+        local oy = math.floor(o.pos.y / 32)
+        if oy == targetY and ox >= px - CORE.Collect_Range and ox <= px + CORE.Collect_Range then
+            sendPacketRaw(false, { type = 11, value = o.oid, x = o.pos.x, y = o.pos.y })
+        end
+    end
+    sleep(DELAY.Collect)
+end
+
+-- =============================================
+-- HOOK PENANGANAN DROP ERROR & DIALOG
+-- =============================================
+AddHook("onvarlist", "DropError", function(vlist, netID)
+    if vlist and vlist[0] == "OnTextOverlay" and vlist[1] then
+        if string.find(vlist[1], "You can't") then
+            DROP.Drop_Index = DROP.Drop_Index + 1
+            send("`4Offset increased to: " .. DROP.Drop_Index)
+        end
+    elseif vlist and vlist[0] == "OnDialogRequest" and vlist[1] then
+        if string.find(vlist[1], "add_textbox|How many to drop?") then
+            send("`wDrop dialog detected, ignoring...")
+            return true
+        end
+    end
+    return false
+end)
+
+-- =============================================
+-- FUNGSI WARP & DROP
+-- =============================================
+function Warp(worldName)
+    state.warpAttempts = 0
+    local maxAttempts = state.Max_Warp_Attempts or 5
+
+    while state.warpAttempts < maxAttempts do
+        send("`2Warping to `#" .. worldName .. " (" .. (state.warpAttempts + 1) .. "/" .. maxAttempts .. ")")
+        sendPacket(3, "action|join_request\nname|" .. worldName)
+        sleep(DELAY.Warp)
+
+        local currentWorld = getWorld()
+        local isCorrect = false
+        if currentWorld then
+            local targetName = string.upper((worldName:match("([^|]+)") or worldName))
+            local currentName = string.upper(currentWorld.name)
+            isCorrect = (targetName == currentName)
+        end
+
+        if isCorrect then
+            send("`2Arrived at `#" .. worldName)
+            return true
+        else
+            state.warpAttempts = state.warpAttempts + 1
+            if state.warpAttempts < maxAttempts then
+                sleep(5000)
+            end
+        end
+    end
+
+    send("`4Failed to warp to `#" .. worldName)
+    state.paused = true
+    return false
+end
+
+function NextWorld()
+    state.World_Index = state.World_Index + 1
+    if state.World_Index > #World_Take_List then
+        state.World_Index = 1
+    end
+    local nextWorld = World_Take_List[state.World_Index]
+    return Warp(nextWorld)
+end
+
+function DropItem(id, count)
+    sendPacket(2, "action|drop\n|itemID|" .. id)
+    sleep(DELAY.Move)
+    sendPacket(2, "action|dialog_return\ndialog_name|drop_item\nitemID|" .. id .. "|\ncount|" .. count)
+    sleep(DELAY.Move)
+end
+
+function DropItems()
+    local blockID = CORE.Item_ID + 1
+    local amount = inventory(blockID)
+    if amount <= 0 then return false end
+
+    if Use_World_Drop then
+        if not Warp(World_Drop) then
+            send("`4Gagal warp ke drop world")
+            return false
+        end
+    end
+
+    local tiles = getTile()
+    local dropped = false
+    if tiles then
+        for _, tile in ipairs(tiles) do
+            if tile.fg == DROP.Target_Pos then
+                local targetX = tile.pos.x - DROP.Drop_Index
+                local targetY = tile.pos.y
+                findPath(targetX, targetY)
+                sleep(DELAY.Move)
+                DropItem(blockID, amount)
+                dropped = true
+                break
+            end
+        end
+    end
+
+    if not dropped then
+        DropItem(blockID, amount)
+    end
+
+    sleep(DELAY.Move)
+
+    if Use_World_Drop then
+        Warp(Farm_World)
+    end
+
+    findPath(startX, startY)
+    sleep(DELAY.Move)
+    return true
+end
+
+-- =============================================
+-- FUNGSI TAKE BLOCK
+-- =============================================
+function TakeBlock()
+    if Use_World_Take then
+        if not NextWorld() then
+            send("`4Gagal pindah ke world take")
+            return false
+        end
+    end
+
+    local found = false
+    for _, obj in pairs(getWorldObject()) do
+        if obj.id == CORE.Item_ID then
+            local targetX = math.floor(obj.pos.x / 32)
+            local targetY = math.floor(obj.pos.y / 32)
+            findPath(targetX, targetY)
+            sleep(DELAY.Move)
+            found = true
+            break
+        end
+    end
+
+    if Use_World_Take then
+        Warp(Farm_World)
+    end
+
+    findPath(startX, startY)
+    sleep(DELAY.Move)
+    return found
+end
+
+-- =============================================
+-- FUNGSI PNB (Place N Break)
+-- =============================================
+function pnb()
+    while inventory(CORE.Item_ID) > 0 and inventory(CORE.Item_ID + 1) < CORE.Target_Amount do
+        local currentX = math.floor(getLocal().pos.x / 32)
+        local currentY = math.floor(getLocal().pos.y / 32)
+        if currentX ~= startX or currentY ~= startY then
+            findPath(startX, startY)
+            sleep(DELAY.Move)
+        end
+
+        collect()
+        
+        for offsetX = -TILE.X, TILE.X do
+            local c_tile = checkTile((getLocal().pos.x // 32) + offsetX, (getLocal().pos.y // 32) + TILE.Y)
+            if c_tile ~= nil and c_tile.fg == 0 then
+                put(c_tile.pos.x, c_tile.pos.y)
+            end
+        end
+        
+        sleep(DELAY.Place)
+        
+        for offsetX = -TILE.X, TILE.X do
+            local tries = 0
+            local c_tile = checkTile((getLocal().pos.x // 32) + offsetX, (getLocal().pos.y // 32) + TILE.Y)
+            while c_tile ~= nil and c_tile.fg ~= 0 and tries < state.triesThreshold do
+                punch(c_tile.pos.x, c_tile.pos.y)
+                sleep(50)
+                c_tile = checkTile(c_tile.pos.x, c_tile.pos.y)
+                tries = tries + 1
+            end
+        end
+    end
+end
+
+-- =============================================
+-- LOOP UTAMA
+-- =============================================
+while true do
+    if state.paused then
+        sleep(5000)
+    else
+        local blockAmount = inventory(CORE.Item_ID + 1)
+        if blockAmount >= CORE.Target_Amount then
+            DropItems()
+        elseif inventory(CORE.Item_ID) > 0 then
+            pnb()
+        else
+            TakeBlock()
+        end
+        sleep(100)
+    end
+end
