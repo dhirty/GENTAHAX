@@ -275,6 +275,7 @@ function pnb()
                 tries = tries + 1
             end
         end
+        collect()
     end
 end
 
