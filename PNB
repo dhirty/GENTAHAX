@@ -274,8 +274,9 @@ function pnb()
                 c_tile = checkTile(c_tile.pos.x, c_tile.pos.y)
                 tries = tries + 1
             end
+            collect()
         end
-        collect()
+        --collect()
     end
 end
 
