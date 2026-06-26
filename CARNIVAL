@@ -383,12 +383,6 @@ function RunGame()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
 
-    -- Cek stuck di awal
-    if isStuck() then
-        recoverFromStuck()
-        return
-    end
-
     local px, py = cfg.portal[1], cfg.portal[2]
     local tx, ty = cfg.target[1], cfg.target[2]
     local cx, cy = cfg.checkpoint[1], cfg.checkpoint[2]
@@ -396,54 +390,40 @@ function RunGame()
     if x == px and y == py then
         enter(px, py)
         sleep(200)
+        return
+    end
 
-    elseif x == cx and y == cy then
-        -- 🔁 Loop menuju target dengan deteksi stuck & world
-        local attempts = 0
+    if x == cx and y == cy then
         while true do
-            -- Cek apakah masih di world Carnival
             if not WorldCheck(Carnival_World) then
-                send("`4Keluar dari Carnival World, keluar loop")
+                send("`4Keluar dari Carnival World, warp ulang...")
+                Warp(Carnival_World)
                 break
-            end
-
-            -- Cek stuck di setiap iterasi
-            if isStuck() then
-                recoverFromStuck()
-                break  -- keluar loop, akan kembali ke RunGame dari awal
             end
 
             local currX = math.floor(getLocal().pos.x / 32)
             local currY = math.floor(getLocal().pos.y / 32)
 
             if currX == tx and currY == ty then
-                retryCount = 0
                 break
             end
 
             findPath(tx, ty)
             sleep(DELAY.Path)
-            attempts = attempts + 1
-
-            -- Reset attempts jika terlalu banyak (optional)
-            if attempts > 10 then
-                lastCheckPos = nil
-                attempts = 0
-            end
         end
+        return
+    end
 
-    elseif x == tx and y == ty then
-        -- Jika mode Growganoth, punch target
+    if x == tx and y == ty then
         if MODE.SELECTED == 4 or MODE.SELECTED == 5 then
             requestTileChange(tx, ty, 18)
         end
         sleep(200)
-        retryCount = 0
-
-    else
-        findPath(px, py)
-        sleep(200)
+        return
     end
+
+    findPath(px, py)
+    sleep(200)
 end
 
 -- =============================================
