@@ -1,7 +1,11 @@
 -- =============================================
+-- SCRIPT CARNIVAL FARMING (Tanpa Recovery)
+-- =============================================
+
+-- =============================================
 -- KONFIGURASI
 -- =============================================
---[[
+-[[
 Storage_World = "storage|pass"
 
 MODE = {
@@ -37,15 +41,8 @@ GAME_CONFIG = {
 
 DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
 
-config = {
-    Max_Stuck_Time = 5,   -- 5 detik (dalam detik)
-    Retry_Attempts = 10
-}
-
--- =============================================
--- WEBHOOK CONFIG
--- =============================================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
+-- Webhook URL (ganti dengan URL Anda)
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1520156366331969586/5ywDqeoxZbWkLSem3KFE49oVh1loUdjcf9QMpULCwsipwNP7VgvzFK1j09_6NiAFTb2A"
 
 -- =============================================
 -- STATE
@@ -53,6 +50,7 @@ local WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_id/your_webho
 
 Ticket_ID = 1898
 Carnival_World = "CARNIVAL"
+
 state = {
     warpAttempts = 0,
     Max_Warp_Attempts = 5,
@@ -170,31 +168,28 @@ function DropPos()
 end
 
 -- =============================================
--- WEBHOOK NOTIFICATION
+-- WEBHOOK
 -- =============================================
 
 function sendDropWebhook(items)
     if #items == 0 then return end
-
     local description = "📦 **Drop Items Detected!**\n"
     for _, item in ipairs(items) do
         local name = getItemByID(item.id).name or "Unknown"
         description = description .. string.format("• **%s** → %d items\n", name, item.amount)
     end
-
     local webhookData = {
         username = "Carnival Bot",
         avatar_url = "https://i.imgur.com/4M34hi2.png",
         content = description
     }
-
     if sendWebhook then
         sendWebhook(WEBHOOK_URL, webhookData)
     end
 end
 
 -- =============================================
--- DROP ITEMS DI STORAGE (dengan webhook)
+-- DROP ITEMS DI STORAGE
 -- =============================================
 
 function DropItemsInStorage()
@@ -305,14 +300,12 @@ function RunGame()
     if x == px and y == py then
         enter(px, py)
         sleep(200)
-        return
-    end
 
-    if x == cx and y == cy then
+    elseif x == cx and y == cy then
+        -- Loop menuju target dengan pengecekan world
         while true do
             if not WorldCheck(Carnival_World) then
-                send("`4Keluar dari Carnival World, warp ulang...")
-                Warp(Carnival_World)
+                send("`4Keluar dari Carnival World, keluar loop")
                 break
             end
 
@@ -326,19 +319,18 @@ function RunGame()
             findPath(tx, ty)
             sleep(DELAY.Path)
         end
-        return
-    end
 
-    if x == tx and y == ty then
+    elseif x == tx and y == ty then
+        -- Punch untuk Growganoth (mode 4 & 5)
         if MODE.SELECTED == 4 or MODE.SELECTED == 5 then
             requestTileChange(tx, ty, 18)
         end
         sleep(200)
-        return
-    end
 
-    findPath(px, py)
-    sleep(200)
+    else
+        findPath(px, py)
+        sleep(200)
+    end
 end
 
 -- =============================================
@@ -362,7 +354,7 @@ function executeMode()
 end
 
 -- =============================================
--- HOOK (World Locked & Drop Dialog)
+-- HOOK
 -- =============================================
 
 AddHook("onvarlist", "DropError", function(vlist, netID)
