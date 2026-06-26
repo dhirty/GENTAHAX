@@ -314,7 +314,7 @@ function RunGame()
             local currY = math.floor(getLocal().pos.y / 32)
 
             if currX == tx and currY == ty then
-                sleep(500)  -- tunggu efek game selesai
+                sleep(300)  -- tunggu efek game selesai
                 local finalX = math.floor(getLocal().pos.x / 32)
                 local finalY = math.floor(getLocal().pos.y / 32)
                 if finalX == tx and finalY == ty then
