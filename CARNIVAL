@@ -26,7 +26,6 @@ DROP = {
     Target_Pos = 20,
     Drop_Index = 2
 }
-
 ]]
 GAME_CONFIG = {
     [1] = {portal = {26, 25}, target = {24, 24}, checkpoint = {14, 32}},
@@ -39,60 +38,30 @@ GAME_CONFIG = {
 DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
 
 config = {
-    Max_Stuck_Time = 5000,
+    Max_Stuck_Time = 5,   -- 5 detik (dalam detik)
     Retry_Attempts = 10
 }
 
 -- =============================================
+-- WEBHOOK CONFIG
+-- =============================================
+local WEBHOOK_URL = "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
+
+-- =============================================
 -- STATE
 -- =============================================
+
 Ticket_ID = 1898
 Carnival_World = "CARNIVAL"
-
 state = {
     warpAttempts = 0,
     Max_Warp_Attempts = 5,
     paused = false
 }
 
-local lastPosition = nil
-local stuckTimer = 0
-local retryCount = 0
-local stuckStartTime = 0
-local lastCheckPos = nil
-
-
 -- =============================================
 -- FUNGSI UTILITY
 -- =============================================
--- =============================================
--- WEBHOOK NOTIFICATION UNTUK DROP ITEMS (Tanpa ID)
--- =============================================
-
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1520156366331969586/5ywDqeoxZbWkLSem3KFE49oVh1loUdjcf9QMpULCwsipwNP7VgvzFK1j09_6NiAFTb2A"
-
--- =============================================
--- WEBHOOK NOTIFICATION (Tanpa ID, hanya nama item)
--- =============================================
-function sendDropWebhook(items)
-    if #items == 0 then return end
-
-    local description = "📦 **Drop Items Detected!**\n"
-    for _, item in ipairs(items) do
-        local name = getItemByID(item.id).name or "Unknown"
-        description = description .. string.format("• **%s** → %d items\n", name, item.amount)
-    end
-
-    local webhookData = {
-        username = "Carnival Bot",
-        avatar_url = "https://i.imgur.com/4M34hi2.png",
-        content = description
-    }
-
-    if sendWebhook then
-        sendWebhook(WEBHOOK_URL, webhookData)
-    end
-end
 
 function send(txt)
     local var = {}
@@ -201,18 +170,38 @@ function DropPos()
 end
 
 -- =============================================
--- DROP ITEMS DI STORAGE
+-- WEBHOOK NOTIFICATION
 -- =============================================
+
+function sendDropWebhook(items)
+    if #items == 0 then return end
+
+    local description = "📦 **Drop Items Detected!**\n"
+    for _, item in ipairs(items) do
+        local name = getItemByID(item.id).name or "Unknown"
+        description = description .. string.format("• **%s** → %d items\n", name, item.amount)
+    end
+
+    local webhookData = {
+        username = "Carnival Bot",
+        avatar_url = "https://i.imgur.com/4M34hi2.png",
+        content = description
+    }
+
+    if sendWebhook then
+        sendWebhook(WEBHOOK_URL, webhookData)
+    end
+end
 
 -- =============================================
 -- DROP ITEMS DI STORAGE (dengan webhook)
 -- =============================================
+
 function DropItemsInStorage()
     local itemsToDrop = {}
     local inv = getInventory()
     if not inv then return false end
 
-    -- Kumpulkan item yang akan di-drop
     for _, item in ipairs(inv) do
         for _, dropId in ipairs(DROP_ITEMS) do
             if item.id == dropId and item.amount > 0 then
@@ -224,12 +213,9 @@ function DropItemsInStorage()
 
     if #itemsToDrop == 0 then return false end
 
-    -- Kirim webhook sebelum drop
     sendDropWebhook(itemsToDrop)
 
-    -- Cari posisi drop (jika ada)
     if not DropPos() then
-        -- Jika tidak ada tile target, drop di tempat
         for _, dropId in ipairs(DROP_ITEMS) do
             while true do
                 local amount = 0
@@ -247,7 +233,6 @@ function DropItemsInStorage()
         return true
     end
 
-    -- Drop semua item di posisi target
     for _, dropId in ipairs(DROP_ITEMS) do
         while true do
             local amount = 0
@@ -272,108 +257,38 @@ end
 
 function Refill_Ticket()
     if Inventory(Ticket_ID) > 0 then return true end
-    
+
     if not Warp(Storage_World) then
         state.paused = true
         return false
     end
-    
+
     DropItemsInStorage()
-    
+
     local success = false
     for i = 1, 3 do
-        if Take_Item() then 
-            success = true 
-            break 
+        if Take_Item() then
+            success = true
+            break
         end
         sleep(1000)
     end
-    
+
     if not success then
         state.paused = true
         return false
     end
-    
+
     if not Warp(Carnival_World) then
         state.paused = true
         return false
     end
-    
+
     return true
 end
 
 -- =============================================
--- DETEKSI STUCK
--- =============================================
-
--- =============================================
--- DETEKSI STUCK (Versi Responsif)
--- =============================================
-
-function isStuck()
-    local x = math.floor(getLocal().pos.x / 32)
-    local y = math.floor(getLocal().pos.y / 32)
-    local currentPos = {x = x, y = y}
-    
-    if not lastCheckPos then
-        lastCheckPos = currentPos
-        stuckStartTime = os.time()
-        return false
-    end
-    
-    -- Jika posisi berubah, reset timer
-    if lastCheckPos.x ~= x or lastCheckPos.y ~= y then
-        lastCheckPos = currentPos
-        stuckStartTime = os.time()
-        retryCount = 0
-        return false
-    end
-    
-    -- Jika posisi sama dalam waktu tertentu
-    if os.time() - stuckStartTime > config.Max_Stuck_Time then
-        return true
-    end
-    
-    return false
-end
--- =============================================
--- RECOVERY DARI STUCK (Versi Agresif)
--- =============================================
-
-function recoverFromStuck()
-    retryCount = retryCount + 1
-    lastCheckPos = nil  -- reset posisi
-    stuckStartTime = 0
-    
-    local targetMap = {
-        [1] = {24, 24},
-        [2] = {31, 11},
-        [3] = {21, 46},
-        [4] = {3, 23},
-        [5] = {96, 23}
-    }
-    
-    local target = targetMap[MODE.SELECTED]
-    if target then
-        findPath(target[1], target[2])
-        if MODE.SELECTED == 3 then sleep(5000) end
-    end
-    
-    sleep(1000)
-    
-    if retryCount >= config.Retry_Attempts then
-        state.paused = true
-        send("`4Too many stuck attempts, pausing script.")
-        retryCount = 0
-    end
-end
-
--- =============================================
--- FUNGSI GAME GENERIK (Dengan Pengecekan World di Loop)
--- =============================================
-
--- =============================================
--- FUNGSI RunGame() - Bagian Loop While
+-- FUNGSI GAME GENERIK (Tanpa Recovery)
 -- =============================================
 
 function RunGame()
@@ -431,7 +346,6 @@ end
 -- =============================================
 
 function executeMode()
-    -- Cek world sebelum menjalankan game
     if not WorldCheck(Carnival_World) then
         if not Warp(Carnival_World) then return end
     end
@@ -448,23 +362,27 @@ function executeMode()
 end
 
 -- =============================================
--- LOOP UTAMA
+-- HOOK (World Locked & Drop Dialog)
 -- =============================================
+
 AddHook("onvarlist", "DropError", function(vlist, netID)
     if vlist and vlist[0] == "OnConsoleMessage" and vlist[1] then
-        if string.find(vlist[1], "World Locked") and state.paused then
+        if string.find(vlist[1], "World Locked") then
             state.paused = false
             send("`4World Locked detected, script continued.")
             return true
         end
     elseif vlist and vlist[0] == "OnDialogRequest" and vlist[1] then
         if string.find(vlist[1], "add_textbox|How many to drop?") then
-            -- Abaikan dialog drop (jangan tampilkan)
             return true
         end
     end
     return false
 end)
+
+-- =============================================
+-- LOOP UTAMA
+-- =============================================
 
 send("`2Carnival Bot Started! Mode: " .. MODE.INFO[MODE.SELECTED])
 
