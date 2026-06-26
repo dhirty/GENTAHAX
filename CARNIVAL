@@ -301,7 +301,6 @@ function RunGame()
         enter(px, py)
         sleep(200)
 
-    --elseif x ~= tx and y ~= ty then
     elseif x == cx and y == cy then
         -- Loop menuju target dengan pengecekan world
         while true do
@@ -314,15 +313,8 @@ function RunGame()
             local currY = math.floor(getLocal().pos.y / 32)
 
             if currX == tx and currY == ty then
-                sleep(300)  -- tunggu efek game selesai
-                local finalX = math.floor(getLocal().pos.x / 32)
-                local finalY = math.floor(getLocal().pos.y / 32)
-                if finalX == tx and finalY == ty then
-                    break
-                else
-                -- tetap di loop
-                end
-             end
+                break
+            end
 
             findPath(tx, ty)
             sleep(DELAY.Path)
@@ -340,7 +332,6 @@ function RunGame()
         sleep(200)
     end
 end
-
 -- =============================================
 -- MAIN EXECUTE
 -- =============================================
