@@ -1,10 +1,13 @@
 -- =============================================
+-- SCRIPT CARNIVAL FARMING (Drop hanya di Storage)
+-- =============================================
+
+-- =============================================
 -- KONFIGURASI
 -- =============================================
+
 --[[
-Carnival_World = "CARNIVAL"           -- World tempat bermain game (bisa CARNIVAL_1 sampai _100)
 Storage_World = "storage|pass"        -- World tempat menyimpan tiket cadangan
-Ticket_ID = 1898                      -- ID item tiket
 
 MODE = {
     SELECTED = 2,
@@ -17,6 +20,9 @@ MODE = {
     }
 }
 ]]
+Carnival_World = "CARNIVAL"
+Ticket_ID = 1898
+
 GAME_CONFIG = {
     [1] = {portal = {26, 25}, target = {24, 24}, checkpoint = {14, 32}},
     [2] = {portal = {33, 13}, target = {31, 11}, checkpoint = {31, 15}},
@@ -35,7 +41,7 @@ DELAY = {
 }
 
 DROP = {
-    Target_Pos = 7164,
+    Target_Pos = 20,
     Drop_Index = 2
 }
 
@@ -82,7 +88,6 @@ function WorldCheck(targetWorld)
     if not currentWorld then return false end
     local currentName = string.upper(currentWorld.name)
     
-    -- Jika target adalah "CARNIVAL", maka current world harus diawali dengan "CARNIVAL"
     if string.upper(targetWorld) == "CARNIVAL" then
         return string.find(currentName, "^CARNIVAL") == 1
     end
@@ -170,10 +175,10 @@ function DropPos()
 end
 
 -- =============================================
--- DROP SEBELUM REFILL
+-- DROP ITEMS (Hanya dipanggil di Storage World)
 -- =============================================
 
-function CheckAndDropItems()
+function DropItemsInStorage()
     local hasItems = false
     local inv = getInventory()
     if not inv then return false end
@@ -190,8 +195,20 @@ function CheckAndDropItems()
     
     if not hasItems then return false end
     
-    if not DropPos() then return false end
+    -- Cari posisi drop di Storage World
+    if not DropPos() then
+        -- Jika tidak ada tile target, drop di tempat
+        for _, dropId in ipairs(DROP_ITEMS) do
+            for _, item in ipairs(getInventory()) do
+                if item.id == dropId and item.amount > 0 then
+                    dropItem(dropId, item.amount)
+                end
+            end
+        end
+        return true
+    end
     
+    -- Drop semua item dari DROP_ITEMS
     for _, dropId in ipairs(DROP_ITEMS) do
         for _, item in ipairs(getInventory()) do
             if item.id == dropId and item.amount > 0 then
@@ -203,18 +220,19 @@ function CheckAndDropItems()
 end
 
 -- =============================================
--- REFILL TICKET
+-- REFILL TICKET (Drop hanya di Storage)
 -- =============================================
 
 function Refill_Ticket()
-    CheckAndDropItems()
-    
     if Inventory(Ticket_ID) > 0 then return true end
     
     if not Warp(Storage_World) then
         state.paused = true
         return false
     end
+    
+    -- Drop item yang tidak berguna (hanya di Storage)
+    DropItemsInStorage()
     
     local success = false
     for i = 1, 3 do
@@ -338,7 +356,7 @@ function executeMode()
         end
     end
     
-    CheckAndDropItems()
+    -- Drop TIDAK dilakukan di Carnival
     RunGame()
 end
 
