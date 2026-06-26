@@ -58,6 +58,9 @@ state = {
 local lastPosition = nil
 local stuckTimer = 0
 local retryCount = 0
+local stuckStartTime = 0
+local lastCheckPos = nil
+
 
 -- =============================================
 -- FUNGSI UTILITY
@@ -303,28 +306,44 @@ end
 -- DETEKSI STUCK
 -- =============================================
 
+-- =============================================
+-- DETEKSI STUCK (Versi Responsif)
+-- =============================================
+
 function isStuck()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
+    local currentPos = {x = x, y = y}
     
-    if lastPosition then
-        if lastPosition.x == x and lastPosition.y == y then
-            return os.time() - stuckTimer > config.Max_Stuck_Time
-        else
-            lastPosition = {x = x, y = y}
-            stuckTimer = os.time()
-            retryCount = 0
-        end
-    else
-        lastPosition = {x = x, y = y}
-        stuckTimer = os.time()
+    if not lastCheckPos then
+        lastCheckPos = currentPos
+        stuckStartTime = os.time()
+        return false
     end
+    
+    -- Jika posisi berubah, reset timer
+    if lastCheckPos.x ~= x or lastCheckPos.y ~= y then
+        lastCheckPos = currentPos
+        stuckStartTime = os.time()
+        retryCount = 0
+        return false
+    end
+    
+    -- Jika posisi sama dalam waktu tertentu
+    if os.time() - stuckStartTime > config.Max_Stuck_Time then
+        return true
+    end
+    
     return false
 end
+-- =============================================
+-- RECOVERY DARI STUCK (Versi Agresif)
+-- =============================================
 
 function recoverFromStuck()
     retryCount = retryCount + 1
-    lastPosition = nil
+    lastCheckPos = nil  -- reset posisi
+    stuckStartTime = 0
     
     local targetMap = {
         [1] = {24, 24},
@@ -340,15 +359,21 @@ function recoverFromStuck()
         if MODE.SELECTED == 3 then sleep(5000) end
     end
     
-    sleep(2000)
+    sleep(1000)
+    
     if retryCount >= config.Retry_Attempts then
-        sleep(5000)
+        state.paused = true
+        send("`4Too many stuck attempts, pausing script.")
         retryCount = 0
     end
 end
 
 -- =============================================
 -- FUNGSI GAME GENERIK (Dengan Pengecekan World di Loop)
+-- =============================================
+
+-- =============================================
+-- FUNGSI RunGame() - Bagian Loop While
 -- =============================================
 
 function RunGame()
@@ -358,6 +383,7 @@ function RunGame()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
 
+    -- Cek stuck di awal
     if isStuck() then
         recoverFromStuck()
         return
@@ -372,11 +398,19 @@ function RunGame()
         sleep(200)
 
     elseif x == cx and y == cy then
-        -- Loop menuju target
+        -- 🔁 Loop menuju target dengan deteksi stuck & world
         local attempts = 0
         while true do
+            -- Cek apakah masih di world Carnival
             if not WorldCheck(Carnival_World) then
+                send("`4Keluar dari Carnival World, keluar loop")
                 break
+            end
+
+            -- Cek stuck di setiap iterasi
+            if isStuck() then
+                recoverFromStuck()
+                break  -- keluar loop, akan kembali ke RunGame dari awal
             end
 
             local currX = math.floor(getLocal().pos.x / 32)
@@ -387,24 +421,21 @@ function RunGame()
                 break
             end
 
-            if isStuck() then
-                recoverFromStuck()
-                break
-            end
-
             findPath(tx, ty)
             sleep(DELAY.Path)
             attempts = attempts + 1
+
+            -- Reset attempts jika terlalu banyak (optional)
             if attempts > 10 then
-                lastPosition = nil
+                lastCheckPos = nil
                 attempts = 0
             end
         end
 
     elseif x == tx and y == ty then
-        -- 👇 PUNCH DI SINI UNTUK GROWGANOTH
+        -- Jika mode Growganoth, punch target
         if MODE.SELECTED == 4 or MODE.SELECTED == 5 then
-            requestTileChange(tx, ty, 18)  -- punch target block
+            requestTileChange(tx, ty, 18)
         end
         sleep(200)
         retryCount = 0
