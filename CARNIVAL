@@ -352,7 +352,6 @@ end
 -- =============================================
 
 function RunGame()
-function RunGame()
     local cfg = GAME_CONFIG[MODE.SELECTED]
     if not cfg then return end
 
