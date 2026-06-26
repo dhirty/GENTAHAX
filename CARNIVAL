@@ -1,0 +1,362 @@
+-- =============================================
+-- KONFIGURASI
+-- =============================================
+--[[
+Carnival_World = "CARNIVAL"           -- World tempat bermain game (bisa CARNIVAL_1 sampai _100)
+Storage_World = "storage|pass"        -- World tempat menyimpan tiket cadangan
+Ticket_ID = 1898                      -- ID item tiket
+
+MODE = {
+    SELECTED = 2,
+    INFO = {
+        [1] = "Maze",
+        [2] = "Death Race",
+        [3] = "Spiky Survival",
+        [4] = "Growganoth Left",
+        [5] = "Growganoth Right"
+    }
+}
+]]
+GAME_CONFIG = {
+    [1] = {portal = {26, 25}, target = {24, 24}, checkpoint = {14, 32}},
+    [2] = {portal = {33, 13}, target = {31, 11}, checkpoint = {31, 15}},
+    [3] = {portal = {28, 42}, target = {21, 46}, checkpoint = {21, 41}},
+    [4] = {portal = {7, 37}, target = {3, 23}, checkpoint = {3, 53}},
+    [5] = {portal = {92, 37}, target = {96, 23}, checkpoint = {96, 53}}
+}
+
+DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
+
+DELAY = {
+    Warp = 7000,
+    Path = 100,
+    Loop = 1000,
+    Move = 1000
+}
+
+DROP = {
+    Target_Pos = 7164,
+    Drop_Index = 2
+}
+
+config = {
+    Max_Stuck_Time = 5000,
+    Retry_Attempts = 10
+}
+
+-- =============================================
+-- STATE
+-- =============================================
+
+state = {
+    warpAttempts = 0,
+    Max_Warp_Attempts = 5,
+    paused = false
+}
+
+local lastPosition = nil
+local stuckTimer = 0
+local retryCount = 0
+
+-- =============================================
+-- FUNGSI UTILITY
+-- =============================================
+
+function send(txt)
+    local var = {}
+    var[0] = "OnTextOverlay"
+    var[1] = txt
+    sendVariant(var)
+end
+
+function Inventory(id)
+    for _, x in pairs(getInventory()) do
+        if x.id == id then return x.amount end
+    end
+    return 0
+end
+
+function WorldCheck(targetWorld)
+    if not targetWorld then return false end
+    local currentWorld = getWorld()
+    if not currentWorld then return false end
+    local currentName = string.upper(currentWorld.name)
+    
+    -- Jika target adalah "CARNIVAL", maka current world harus diawali dengan "CARNIVAL"
+    if string.upper(targetWorld) == "CARNIVAL" then
+        return string.find(currentName, "^CARNIVAL") == 1
+    end
+    
+    local targetName = string.upper((targetWorld:match("([^|]+)") or targetWorld))
+    return targetName == currentName
+end
+
+function Warp(worldName)
+    if not worldName then return false end
+    state.warpAttempts = 0
+    local maxAttempts = state.Max_Warp_Attempts or 5
+
+    while state.warpAttempts < maxAttempts do
+        send("`2Warping to `#" .. worldName .. " (" .. (state.warpAttempts + 1) .. "/" .. maxAttempts .. ")")
+        sendPacket(3, "action|join_request\nname|" .. worldName)
+        sleep(DELAY.Warp)
+
+        if WorldCheck(worldName) then
+            return true
+        else
+            state.warpAttempts = state.warpAttempts + 1
+            if state.warpAttempts < maxAttempts then sleep(5000) end
+        end
+    end
+
+    send("`4Failed to warp to `#" .. worldName)
+    state.paused = true
+    return false
+end
+
+function enter(x, y)
+    sendPacketRaw(false, {
+        type = 7,
+        value = 18,
+        x = getLocal().pos.x,
+        y = getLocal().pos.y,
+        punchx = x,
+        punchy = y
+    })
+end
+
+function Collect(x, y)
+    local px = math.floor(getLocal().pos.x / 32)
+    local py = math.floor(getLocal().pos.y / 32)
+    if math.abs(px - x) <= 3 and math.abs(py - y) <= 3 then
+        requestCollect(x, y, Ticket_ID)
+        return true
+    end
+    return false
+end
+
+function Take_Item()
+    for _, obj in pairs(getWorldObject()) do
+        if obj.id == Ticket_ID then
+            local tx = math.floor(obj.pos.x / 32)
+            local ty = math.floor(obj.pos.y / 32)
+            findPath(tx, ty)
+            sleep(800)
+            if Collect(tx, ty) then
+                sleep(1000)
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function dropItem(id, count)
+    sendPacket(2, "action|drop\n|itemID|" .. id)
+    sleep(100)
+    sendPacket(2, "action|dialog_return\ndialog_name|drop_item\nitemID|" .. id .. "|\ncount|" .. count)
+    sleep(100)
+end
+
+function DropPos()
+    for _, tile in pairs(getTile()) do
+        if tile.fg == DROP.Target_Pos then
+            findPath(tile.pos.x - DROP.Drop_Index, tile.pos.y)
+            sleep(DELAY.Move)
+            return true
+        end
+    end
+    return false
+end
+
+-- =============================================
+-- DROP SEBELUM REFILL
+-- =============================================
+
+function CheckAndDropItems()
+    local hasItems = false
+    local inv = getInventory()
+    if not inv then return false end
+    
+    for _, item in ipairs(inv) do
+        for _, dropId in ipairs(DROP_ITEMS) do
+            if item.id == dropId and item.amount > 0 then
+                hasItems = true
+                break
+            end
+        end
+        if hasItems then break end
+    end
+    
+    if not hasItems then return false end
+    
+    if not DropPos() then return false end
+    
+    for _, dropId in ipairs(DROP_ITEMS) do
+        for _, item in ipairs(getInventory()) do
+            if item.id == dropId and item.amount > 0 then
+                dropItem(dropId, item.amount)
+            end
+        end
+    end
+    return true
+end
+
+-- =============================================
+-- REFILL TICKET
+-- =============================================
+
+function Refill_Ticket()
+    CheckAndDropItems()
+    
+    if Inventory(Ticket_ID) > 0 then return true end
+    
+    if not Warp(Storage_World) then
+        state.paused = true
+        return false
+    end
+    
+    local success = false
+    for i = 1, 3 do
+        if Take_Item() then 
+            success = true 
+            break 
+        end
+        sleep(1000)
+    end
+    
+    if not success then
+        state.paused = true
+        return false
+    end
+    
+    if not Warp(Carnival_World) then
+        state.paused = true
+        return false
+    end
+    
+    return true
+end
+
+-- =============================================
+-- DETEKSI STUCK
+-- =============================================
+
+function isStuck()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if lastPosition then
+        if lastPosition.x == x and lastPosition.y == y then
+            return os.time() - stuckTimer > config.Max_Stuck_Time
+        else
+            lastPosition = {x = x, y = y}
+            stuckTimer = os.time()
+            retryCount = 0
+        end
+    else
+        lastPosition = {x = x, y = y}
+        stuckTimer = os.time()
+    end
+    return false
+end
+
+function recoverFromStuck()
+    retryCount = retryCount + 1
+    lastPosition = nil
+    
+    local targetMap = {
+        [1] = {24, 24},
+        [2] = {31, 11},
+        [3] = {21, 46},
+        [4] = {3, 23},
+        [5] = {96, 23}
+    }
+    
+    local target = targetMap[MODE.SELECTED]
+    if target then
+        findPath(target[1], target[2])
+        if MODE.SELECTED == 3 then sleep(5000) end
+    end
+    
+    sleep(2000)
+    if retryCount >= config.Retry_Attempts then
+        sleep(5000)
+        retryCount = 0
+    end
+end
+
+-- =============================================
+-- FUNGSI GAME GENERIK
+-- =============================================
+
+function RunGame()
+    local cfg = GAME_CONFIG[MODE.SELECTED]
+    if not cfg then return end
+    
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+    
+    local px, py = cfg.portal[1], cfg.portal[2]
+    local tx, ty = cfg.target[1], cfg.target[2]
+    local cx, cy = cfg.checkpoint[1], cfg.checkpoint[2]
+    
+    if x == px and y == py then
+        enter(px, py)
+        sleep(200)
+    elseif x == cx and y == cy then
+        findPath(tx, ty)
+        sleep(200)
+    elseif x == tx and y == ty then
+        sleep(200)
+        retryCount = 0
+    else
+        findPath(px, py)
+        sleep(200)
+    end
+end
+
+-- =============================================
+-- MAIN EXECUTE
+-- =============================================
+
+function executeMode()
+    if not WorldCheck(Carnival_World) then
+        if not Warp(Carnival_World) then return end
+    end
+    
+    if Inventory(Ticket_ID) <= 0 then
+        if not Refill_Ticket() then
+            send("`4Refill failed")
+            state.paused = true
+            return
+        end
+    end
+    
+    CheckAndDropItems()
+    RunGame()
+end
+
+-- =============================================
+-- LOOP UTAMA
+-- =============================================
+
+send("`2Carnival Bot Started! Mode: " .. MODE.INFO[MODE.SELECTED])
+
+while true do
+    if not state.paused then
+        local success, err = pcall(executeMode)
+        if not success then
+            send("`4Error: " .. tostring(err))
+            state.paused = true
+        end
+    else
+        sleep(5000)
+    end
+    sleep(DELAY.Loop)
+end
