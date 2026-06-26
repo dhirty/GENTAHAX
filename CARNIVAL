@@ -178,11 +178,16 @@ end
 -- DROP ITEMS (Hanya dipanggil di Storage World)
 -- =============================================
 
+-- =============================================
+-- DROP ITEMS DI STORAGE (Dengan Loop While)
+-- =============================================
+
 function DropItemsInStorage()
     local hasItems = false
     local inv = getInventory()
     if not inv then return false end
     
+    -- Cek apakah ada item dari DROP_ITEMS
     for _, item in ipairs(inv) do
         for _, dropId in ipairs(DROP_ITEMS) do
             if item.id == dropId and item.amount > 0 then
@@ -195,27 +200,43 @@ function DropItemsInStorage()
     
     if not hasItems then return false end
     
-    -- Cari posisi drop di Storage World
-    if not DropPos() then
-        -- Jika tidak ada tile target, drop di tempat
+    -- Cari posisi drop (jika ditemukan, pindah ke sana)
+    local hasDropPos = DropPos()
+    if not hasDropPos then
+        -- Jika tidak ada tile target, drop di tempat saat ini
         for _, dropId in ipairs(DROP_ITEMS) do
-            for _, item in ipairs(getInventory()) do
-                if item.id == dropId and item.amount > 0 then
-                    dropItem(dropId, item.amount)
+            while true do
+                local amount = 0
+                for _, item in ipairs(getInventory()) do
+                    if item.id == dropId then
+                        amount = item.amount
+                        break
+                    end
                 end
+                if amount <= 0 then break end
+                dropItem(dropId, amount)
+                sleep(DELAY.Move)  -- jeda agar packet terkirim
             end
         end
         return true
     end
     
-    -- Drop semua item dari DROP_ITEMS
+    -- Jika posisi ditemukan, pindah ke posisi drop, lalu drop semua item dengan loop while
     for _, dropId in ipairs(DROP_ITEMS) do
-        for _, item in ipairs(getInventory()) do
-            if item.id == dropId and item.amount > 0 then
-                dropItem(dropId, item.amount)
+        while true do
+            local amount = 0
+            for _, item in ipairs(getInventory()) do
+                if item.id == dropId then
+                    amount = item.amount
+                    break
+                end
             end
+            if amount <= 0 then break end
+            dropItem(dropId, amount)
+            sleep(DELAY.Move)
         end
     end
+    
     return true
 end
 
