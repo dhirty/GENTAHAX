@@ -352,6 +352,7 @@ end
 -- =============================================
 
 function RunGame()
+function RunGame()
     local cfg = GAME_CONFIG[MODE.SELECTED]
     if not cfg then return end
 
@@ -370,13 +371,12 @@ function RunGame()
     if x == px and y == py then
         enter(px, py)
         sleep(200)
+
     elseif x == cx and y == cy then
-        -- 🔁 Loop dengan pengecekan world dan stuck
+        -- Loop menuju target
         local attempts = 0
         while true do
-            -- Cek apakah masih di world Carnival
             if not WorldCheck(Carnival_World) then
-                send("`4Keluar dari Carnival World, keluar loop")
                 break
             end
 
@@ -396,15 +396,20 @@ function RunGame()
             findPath(tx, ty)
             sleep(DELAY.Path)
             attempts = attempts + 1
-
             if attempts > 10 then
                 lastPosition = nil
                 attempts = 0
             end
         end
+
     elseif x == tx and y == ty then
+        -- 👇 PUNCH DI SINI UNTUK GROWGANOTH
+        if MODE.SELECTED == 4 or MODE.SELECTED == 5 then
+            requestTileChange(tx, ty, 18)  -- punch target block
+        end
         sleep(200)
         retryCount = 0
+
     else
         findPath(px, py)
         sleep(200)
