@@ -1,8 +1,4 @@
 -- =============================================
--- SCRIPT CARNIVAL FARMING (Tanpa Recovery)
--- =============================================
-
--- =============================================
 -- KONFIGURASI
 -- =============================================
 --[[
@@ -41,7 +37,12 @@ GAME_CONFIG = {
 
 DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
 
--- Webhook URL (ganti dengan URL Anda)
+config = {
+    Max_Stuck_Time = 5000,
+    Retry_Attempts = 10
+}
+
+-- Webhook URL
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1520156366331969586/5ywDqeoxZbWkLSem3KFE49oVh1loUdjcf9QMpULCwsipwNP7VgvzFK1j09_6NiAFTb2A"
 
 -- =============================================
@@ -56,6 +57,10 @@ state = {
     Max_Warp_Attempts = 5,
     paused = false
 }
+
+local lastPosition = nil
+local stuckTimer = 0
+local retryCount = 0
 
 -- =============================================
 -- FUNGSI UTILITY
@@ -168,30 +173,31 @@ function DropPos()
 end
 
 -- =============================================
--- WEBHOOK
+-- WEBHOOK NOTIFICATION (Tanpa ID, hanya nama item)
 -- =============================================
-
 function sendDropWebhook(items)
     if #items == 0 then return end
+
     local description = "📦 **Drop Items Detected!**\n"
     for _, item in ipairs(items) do
         local name = getItemByID(item.id).name or "Unknown"
         description = description .. string.format("• **%s** → %d items\n", name, item.amount)
     end
+
     local webhookData = {
         username = "Carnival Bot",
         avatar_url = "https://i.imgur.com/4M34hi2.png",
         content = description
     }
+
     if sendWebhook then
         sendWebhook(WEBHOOK_URL, webhookData)
     end
 end
 
 -- =============================================
--- DROP ITEMS DI STORAGE
+-- DROP ITEMS DI STORAGE (dengan webhook)
 -- =============================================
-
 function DropItemsInStorage()
     local itemsToDrop = {}
     local inv = getInventory()
@@ -252,38 +258,86 @@ end
 
 function Refill_Ticket()
     if Inventory(Ticket_ID) > 0 then return true end
-
+    
     if not Warp(Storage_World) then
         state.paused = true
         return false
     end
-
+    
     DropItemsInStorage()
-
+    
     local success = false
     for i = 1, 3 do
-        if Take_Item() then
-            success = true
-            break
+        if Take_Item() then 
+            success = true 
+            break 
         end
         sleep(1000)
     end
-
+    
     if not success then
         state.paused = true
         return false
     end
-
+    
     if not Warp(Carnival_World) then
         state.paused = true
         return false
     end
-
+    
     return true
 end
 
 -- =============================================
--- FUNGSI GAME GENERIK (Tanpa Recovery)
+-- DETEKSI STUCK
+-- =============================================
+
+function isStuck()
+    local x = math.floor(getLocal().pos.x / 32)
+    local y = math.floor(getLocal().pos.y / 32)
+    
+    if lastPosition then
+        if lastPosition.x == x and lastPosition.y == y then
+            return os.time() - stuckTimer > config.Max_Stuck_Time
+        else
+            lastPosition = {x = x, y = y}
+            stuckTimer = os.time()
+            retryCount = 0
+        end
+    else
+        lastPosition = {x = x, y = y}
+        stuckTimer = os.time()
+    end
+    return false
+end
+
+function recoverFromStuck()
+    retryCount = retryCount + 1
+    lastPosition = nil
+    
+    local targetMap = {
+        [1] = {24, 24},
+        [2] = {31, 11},
+        [3] = {21, 46},
+        [4] = {3, 23},
+        [5] = {96, 23}
+    }
+    
+    local target = targetMap[MODE.SELECTED]
+    if target then
+        findPath(target[1], target[2])
+        if MODE.SELECTED == 3 then sleep(5000) end
+    end
+    
+    sleep(2000)
+    if retryCount >= config.Retry_Attempts then
+        sleep(5000)
+        retryCount = 0
+    end
+end
+
+-- =============================================
+-- FUNGSI GAME GENERIK
 -- =============================================
 
 function RunGame()
@@ -293,6 +347,11 @@ function RunGame()
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
 
+    if isStuck() then
+        recoverFromStuck()
+        return
+    end
+
     local px, py = cfg.portal[1], cfg.portal[2]
     local tx, ty = cfg.target[1], cfg.target[2]
     local cx, cy = cfg.checkpoint[1], cfg.checkpoint[2]
@@ -301,9 +360,8 @@ function RunGame()
         enter(px, py)
         sleep(200)
 
-    --elseif x ~= tx and y ~= ty then
     elseif x == cx and y == cy then
-        -- Loop menuju target dengan pengecekan world
+        local attempts = 0
         while true do
             if not WorldCheck(Carnival_World) then
                 send("`4Keluar dari Carnival World, keluar loop")
@@ -314,25 +372,38 @@ function RunGame()
             local currY = math.floor(getLocal().pos.y / 32)
 
             if currX == tx and currY == ty then
+                retryCount = 0
+                break
+            end
+
+            if isStuck() then
+                recoverFromStuck()
                 break
             end
 
             findPath(tx, ty)
             sleep(DELAY.Path)
+            attempts = attempts + 1
+
+            if attempts > 10 then
+                lastPosition = nil
+                attempts = 0
+            end
         end
 
     elseif x == tx and y == ty then
-        -- Punch untuk Growganoth (mode 4 & 5)
         if MODE.SELECTED == 4 or MODE.SELECTED == 5 then
             requestTileChange(tx, ty, 18)
         end
         sleep(200)
+        retryCount = 0
 
     else
         findPath(px, py)
         sleep(200)
     end
 end
+
 -- =============================================
 -- MAIN EXECUTE
 -- =============================================
@@ -354,7 +425,7 @@ function executeMode()
 end
 
 -- =============================================
--- HOOK
+-- HOOK (World Locked handling, tanpa You can't)
 -- =============================================
 
 AddHook("onvarlist", "DropError", function(vlist, netID)
