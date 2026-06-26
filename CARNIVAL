@@ -1,18 +1,8 @@
 -- =============================================
--- SCRIPT CARNIVAL FARMING (Drop hanya di Storage)
--- =============================================
-
--- =============================================
 -- KONFIGURASI
 -- =============================================
-
 --[[
-Storage_World = "storage|pass"        -- World tempat menyimpan tiket cadangan
-
-DROP = {
-    Target_Pos = 20,
-    Drop_Index = 2
-}
+Storage_World = "storage|pass"
 
 MODE = {
     SELECTED = 2,
@@ -32,10 +22,12 @@ DELAY = {
     Move = 1000
 }
 
-]]
-Carnival_World = "CARNIVAL"
-Ticket_ID = 1898
+DROP = {
+    Target_Pos = 20,
+    Drop_Index = 2
+}
 
+]]
 GAME_CONFIG = {
     [1] = {portal = {26, 25}, target = {24, 24}, checkpoint = {14, 32}},
     [2] = {portal = {33, 13}, target = {31, 11}, checkpoint = {31, 15}},
@@ -54,6 +46,8 @@ config = {
 -- =============================================
 -- STATE
 -- =============================================
+Ticket_ID = 1898
+Carnival_World = "CARNIVAL"
 
 state = {
     warpAttempts = 0,
@@ -176,11 +170,7 @@ function DropPos()
 end
 
 -- =============================================
--- DROP ITEMS (Hanya dipanggil di Storage World)
--- =============================================
-
--- =============================================
--- DROP ITEMS DI STORAGE (Dengan Loop While)
+-- DROP ITEMS DI STORAGE
 -- =============================================
 
 function DropItemsInStorage()
@@ -188,7 +178,6 @@ function DropItemsInStorage()
     local inv = getInventory()
     if not inv then return false end
     
-    -- Cek apakah ada item dari DROP_ITEMS
     for _, item in ipairs(inv) do
         for _, dropId in ipairs(DROP_ITEMS) do
             if item.id == dropId and item.amount > 0 then
@@ -201,10 +190,7 @@ function DropItemsInStorage()
     
     if not hasItems then return false end
     
-    -- Cari posisi drop (jika ditemukan, pindah ke sana)
-    local hasDropPos = DropPos()
-    if not hasDropPos then
-        -- Jika tidak ada tile target, drop di tempat saat ini
+    if not DropPos() then
         for _, dropId in ipairs(DROP_ITEMS) do
             while true do
                 local amount = 0
@@ -216,13 +202,12 @@ function DropItemsInStorage()
                 end
                 if amount <= 0 then break end
                 dropItem(dropId, amount)
-                sleep(DELAY.Move)  -- jeda agar packet terkirim
+                sleep(DELAY.Move)
             end
         end
         return true
     end
     
-    -- Jika posisi ditemukan, pindah ke posisi drop, lalu drop semua item dengan loop while
     for _, dropId in ipairs(DROP_ITEMS) do
         while true do
             local amount = 0
@@ -242,7 +227,7 @@ function DropItemsInStorage()
 end
 
 -- =============================================
--- REFILL TICKET (Drop hanya di Storage)
+-- REFILL TICKET
 -- =============================================
 
 function Refill_Ticket()
@@ -253,7 +238,6 @@ function Refill_Ticket()
         return false
     end
     
-    -- Drop item yang tidak berguna (hanya di Storage)
     DropItemsInStorage()
     
     local success = false
@@ -327,31 +311,60 @@ function recoverFromStuck()
 end
 
 -- =============================================
--- FUNGSI GAME GENERIK
+-- FUNGSI GAME GENERIK (Dengan Pengecekan World di Loop)
 -- =============================================
 
 function RunGame()
     local cfg = GAME_CONFIG[MODE.SELECTED]
     if not cfg then return end
-    
+
     local x = math.floor(getLocal().pos.x / 32)
     local y = math.floor(getLocal().pos.y / 32)
-    
+
     if isStuck() then
         recoverFromStuck()
         return
     end
-    
+
     local px, py = cfg.portal[1], cfg.portal[2]
     local tx, ty = cfg.target[1], cfg.target[2]
     local cx, cy = cfg.checkpoint[1], cfg.checkpoint[2]
-    
+
     if x == px and y == py then
         enter(px, py)
         sleep(200)
     elseif x == cx and y == cy then
-        findPath(tx, ty)
-        sleep(200)
+        -- 🔁 Loop dengan pengecekan world dan stuck
+        local attempts = 0
+        while true do
+            -- Cek apakah masih di world Carnival
+            if not WorldCheck(Carnival_World) then
+                send("`4Keluar dari Carnival World, keluar loop")
+                break
+            end
+
+            local currX = math.floor(getLocal().pos.x / 32)
+            local currY = math.floor(getLocal().pos.y / 32)
+
+            if currX == tx and currY == ty then
+                retryCount = 0
+                break
+            end
+
+            if isStuck() then
+                recoverFromStuck()
+                break
+            end
+
+            findPath(tx, ty)
+            sleep(DELAY.Path)
+            attempts = attempts + 1
+
+            if attempts > 10 then
+                lastPosition = nil
+                attempts = 0
+            end
+        end
     elseif x == tx and y == ty then
         sleep(200)
         retryCount = 0
@@ -366,10 +379,11 @@ end
 -- =============================================
 
 function executeMode()
+    -- Cek world sebelum menjalankan game
     if not WorldCheck(Carnival_World) then
         if not Warp(Carnival_World) then return end
     end
-    
+
     if Inventory(Ticket_ID) <= 0 then
         if not Refill_Ticket() then
             send("`4Refill failed")
@@ -377,8 +391,7 @@ function executeMode()
             return
         end
     end
-    
-    -- Drop TIDAK dilakukan di Carnival
+
     RunGame()
 end
 
