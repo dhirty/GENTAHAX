@@ -301,7 +301,8 @@ function RunGame()
         enter(px, py)
         sleep(200)
 
-    elseif x == cx and y == cy then
+    elseif x ~= tx and y ~= ty then
+    --elseif x == cx and y == cy then
         -- Loop menuju target dengan pengecekan world
         while true do
             if not WorldCheck(Carnival_World) then
