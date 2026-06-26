@@ -9,6 +9,11 @@
 --[[
 Storage_World = "storage|pass"        -- World tempat menyimpan tiket cadangan
 
+DROP = {
+    Target_Pos = 20,
+    Drop_Index = 2
+}
+
 MODE = {
     SELECTED = 2,
     INFO = {
@@ -19,6 +24,14 @@ MODE = {
         [5] = "Growganoth Right"
     }
 }
+
+DELAY = {
+    Warp = 7000,
+    Path = 100,
+    Loop = 1000,
+    Move = 1000
+}
+
 ]]
 Carnival_World = "CARNIVAL"
 Ticket_ID = 1898
@@ -32,18 +45,6 @@ GAME_CONFIG = {
 }
 
 DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
-
-DELAY = {
-    Warp = 7000,
-    Path = 100,
-    Loop = 1000,
-    Move = 1000
-}
-
-DROP = {
-    Target_Pos = 20,
-    Drop_Index = 2
-}
 
 config = {
     Max_Stuck_Time = 5000,
