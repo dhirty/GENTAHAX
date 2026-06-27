@@ -26,7 +26,9 @@ DROP = {
     Target_Pos = 20,
     Drop_Index = 2
 }
+
 ]]
+
 GAME_CONFIG = {
     [1] = {portal = {26, 25}, target = {24, 24}, checkpoint = {14, 32}},
     [2] = {portal = {33, 13}, target = {31, 11}, checkpoint = {31, 15}},
@@ -42,7 +44,7 @@ config = {
     Retry_Attempts = 10
 }
 
--- Webhook URL
+-- Webhook URL (hanya untuk start)
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1520156366331969586/5ywDqeoxZbWkLSem3KFE49oVh1loUdjcf9QMpULCwsipwNP7VgvzFK1j09_6NiAFTb2A"
 
 -- =============================================
@@ -173,30 +175,26 @@ function DropPos()
 end
 
 -- =============================================
--- WEBHOOK NOTIFICATION (Tanpa ID, hanya nama item)
+-- WEBHOOK START (hanya dikirim sekali di awal)
 -- =============================================
-function sendDropWebhook(items)
-    if #items == 0 then return end
-
-    local description = "📦 **Drop Items Detected!**\n"
-    for _, item in ipairs(items) do
-        local name = getItemByID(item.id).name or "Unknown"
-        description = description .. string.format("• **%s** → %d items\n", name, item.amount)
-    end
+function sendStartWebhook()
+    if not sendWebhook then return end
 
     local webhookData = {
-        username = "Carnival Bot",
+        username = "🎪 Carnival Bot",
         avatar_url = "https://i.imgur.com/4M34hi2.png",
-        content = description
+        content = "🚀 **Carnival Bot Started!**\n\n" ..
+                  "🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️\n" ..
+                  "📦 **Storage World:** `" .. Storage_World .. "`\n" ..
+                  "🎯 **Mode:** " .. MODE.INFO[MODE.SELECTED] .. "\n" ..
+                  "🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️🗞️"
     }
 
-    if sendWebhook then
-        sendWebhook(WEBHOOK_URL, webhookData)
-    end
+    sendWebhook(WEBHOOK_URL, webhookData)
 end
 
 -- =============================================
--- DROP ITEMS DI STORAGE (dengan webhook)
+-- DROP ITEMS DI STORAGE (tanpa webhook)
 -- =============================================
 function DropItemsInStorage()
     local itemsToDrop = {}
@@ -213,8 +211,6 @@ function DropItemsInStorage()
     end
 
     if #itemsToDrop == 0 then return false end
-
-    sendDropWebhook(itemsToDrop)
 
     if not DropPos() then
         for _, dropId in ipairs(DROP_ITEMS) do
@@ -448,6 +444,7 @@ end)
 -- =============================================
 
 send("`2Carnival Bot Started! Mode: " .. MODE.INFO[MODE.SELECTED])
+sendStartWebhook()   -- Webhook hanya dikirim SEKALI di awal
 
 while true do
     if not state.paused then
