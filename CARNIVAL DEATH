@@ -266,54 +266,73 @@ while true do
     end
 
     -- GAMEPLAY DEATH RACE
-    if not isAt(PORTAL) then
-        moveTo(PORTAL)
-    end
-
-    if isAt(PORTAL) then
-        growtopia.enter(PORTAL[1], PORTAL[2])
-        sleep(1000)
-    end
-
-    local start = os.clock() * 1000
-    local timeout = 15000
-    local detected = false
-
-    while (os.clock() * 1000 - start) < timeout do
-        local p = getPos()
-        if not p then
-            sleep(200)
-        else
-            if p.x == CHECKPOINT[1] and p.y == CHECKPOINT[2] then
-                -- Bergerak ke WAIT_TARGET (30,11) dulu
-                sendMsg("`9Di checkpoint, menuju 30,11...")
-                while not isAt(WAIT_TARGET) do
-                    findPath(WAIT_TARGET[1], WAIT_TARGET[2])
-                    sleep(500)
-                end
-                sendMsg("`9Sampai di 30,11, menuju finish...")
-                findPath(TARGET[1], TARGET[2])
-                sleep(800)
-                break
-            end
-
-            if p.x == EXIT[1] and p.y == EXIT[2] then
-                detected = true
-                break
-            end
-
-            if p.x == PORTAL[1] and p.y == PORTAL[2] then
-                detected = true
-                break
-            end
-        end
-        sleep(200)
-    end
-
-    if not detected then
-        sleep(500)
-    end
-
-    sleep(500)
-    sleep(DELAY.Loop)
+if not isAt(PORTAL) then
+    moveTo(PORTAL)
 end
+
+if isAt(PORTAL) then
+    growtopia.enter(PORTAL[1], PORTAL[2])
+    sleep(1000)
+end
+
+local start = os.clock() * 1000
+local timeout = 15000
+local detected = false
+
+while (os.clock() * 1000 - start) < timeout do
+    local p = getPos()
+    if not p then
+        sleep(200)
+    else
+        -- Jika sampai di checkpoint (31,15)
+        if p.x == CHECKPOINT[1] and p.y == CHECKPOINT[2] then
+            sendMsg("`9Di checkpoint, menuju 30,11...")
+            -- Loop sampai benar-benar di WAIT_TARGET (30,11)
+            while not isAt(WAIT_TARGET) do
+                findPath(WAIT_TARGET[1], WAIT_TARGET[2])
+                sleep(500)
+            end
+            sendMsg("`9Sampai di 30,11, menuju finish...")
+
+            -- Loop sampai mencapai TARGET (31,11) atau EXIT (35,16) atau kembali ke PORTAL
+            while true do
+                local pos = getPos()
+                if not pos then
+                    sleep(200)
+                else
+                    if pos.x == TARGET[1] and pos.y == TARGET[2] then
+                        detected = true
+                        break
+                    elseif pos.x == EXIT[1] and pos.y == EXIT[2] then
+                        detected = true
+                        break
+                    elseif pos.x == PORTAL[1] and pos.y == PORTAL[2] then
+                        detected = true
+                        break
+                    else
+                        findPath(TARGET[1], TARGET[2])
+                        sleep(500)
+                    end
+                end
+            end
+            break
+        end
+
+        if p.x == EXIT[1] and p.y == EXIT[2] then
+            detected = true
+            break
+        end
+
+        if p.x == PORTAL[1] and p.y == PORTAL[2] then
+            detected = true
+            break
+        end
+    end
+    sleep(200)
+end
+
+if not detected then
+    sendMsg("`4Timeout atau gagal finish, restart...")
+    sleep(500)
+end
+
