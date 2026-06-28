@@ -16,7 +16,7 @@ local EXIT = {35, 16}
 
 -- Drop configuration
 local DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
-local DROP_TILE_ID = 20
+local DROP_TILE_ID = 7164
 local DROP_OFFSET = 2
 
 editValue("ModFly", true)
