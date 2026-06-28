@@ -1,0 +1,315 @@
+-- =============================================
+-- DEATH RACE DENGAN REFILL TICKET DAN DROP ITEM
+-- =============================================
+
+-- KONFIGURASI
+--local Storage_World = "storage|pass"
+local Carnival_World = "CARNIVAL"
+local Ticket_ID = 1898
+
+-- Koordinat Death Race
+local PORTAL = {33, 13}
+local CHECKPOINT = {31, 15}
+local TARGET = {31, 11}
+local WAIT_TARGET = {30, 11}
+local EXIT = {35, 16}
+
+-- Drop configuration
+local DROP_ITEMS = {2980, 3010, 7136, 2216, 1942, 1936, 1940}
+local DROP_TILE_ID = 20
+local DROP_OFFSET = 2
+
+-- Delay
+local DELAY = {
+    Warp = 4000,
+    Move = 1000,
+    Drop = 100,
+    Loop = 1000
+}
+
+-- STATE
+state = {
+    paused = false,
+    dropOffset = DROP_OFFSET,
+    maxOffset = 10
+}
+
+-- =============================================
+-- FUNGSI BANTU
+-- =============================================
+
+function sendMsg(txt)
+    sendVariant({v1 = "OnTextOverlay", v2 = txt})
+end
+
+function getPos()
+    local me = getLocal()
+    if not me then return nil end
+    return {x = math.floor(me.posX / 32), y = math.floor(me.posY / 32)}
+end
+
+function isAt(pos)
+    local p = getPos()
+    if not p then return false end
+    return p.x == pos[1] and p.y == pos[2]
+end
+
+function WorldCheck(targetWorld)
+    if not targetWorld then return false end
+    local currentName = getCurrentWorldName()
+    if not currentName then return false end
+    if string.upper(targetWorld) == "CARNIVAL" then
+        return string.find(string.upper(currentName), "^CARNIVAL") == 1
+    end
+    local targetName = string.upper((targetWorld:match("([^|]+)") or targetWorld))
+    return targetName == string.upper(currentName)
+end
+
+function moveTo(target)
+    for attempt = 1, 2 do
+        findPath(target[1], target[2])
+        sleep(1000)
+        if isAt(target) then
+            return true
+        end
+        sleep(500)
+    end
+    return false
+end
+
+function Inventory(id)
+    local inv = getInventory()
+    if not inv then return 0 end
+    for _, x in ipairs(inv) do
+        if x.id == id then return x.amount end
+    end
+    return 0
+end
+
+function dropItem(id, count)
+    sendPacket(2, "action|drop\n|itemID|" .. id)
+    sleep(100)
+    sendPacket(2, "action|dialog_return\ndialog_name|drop_item\nitemID|" .. id .. "|\ncount|" .. count)
+    sleep(100)
+end
+
+function DropPos()
+    local tiles = getTiles()
+    if not tiles then return false end
+    for _, tile in ipairs(tiles) do
+        if tile.fg == DROP_TILE_ID then
+            findPath(tile.x - state.dropOffset, tile.y)
+            sleep(DELAY.Move)
+            return true
+        end
+    end
+    return false
+end
+
+function DropItemsInStorage()
+    local itemsToDrop = {}
+    local inv = getInventory()
+    if not inv then return false end
+
+    for _, item in ipairs(inv) do
+        for _, dropId in ipairs(DROP_ITEMS) do
+            if item.id == dropId and item.amount > 0 then
+                table.insert(itemsToDrop, {id = item.id, amount = item.amount})
+                break
+            end
+        end
+    end
+
+    if #itemsToDrop == 0 then return false end
+
+    if not DropPos() then
+        for _, dropId in ipairs(DROP_ITEMS) do
+            while true do
+                local amount = 0
+                for _, item in ipairs(getInventory()) do
+                    if item.id == dropId then
+                        amount = item.amount
+                        break
+                    end
+                end
+                if amount <= 0 then break end
+                dropItem(dropId, amount)
+                sleep(DELAY.Move)
+            end
+        end
+        return true
+    end
+
+    for _, dropId in ipairs(DROP_ITEMS) do
+        while true do
+            local amount = 0
+            for _, item in ipairs(getInventory()) do
+                if item.id == dropId then
+                    amount = item.amount
+                    break
+                end
+            end
+            if amount <= 0 then break end
+            dropItem(dropId, amount)
+            sleep(DELAY.Move)
+        end
+    end
+
+    return true
+end
+
+function Take_Item()
+    local objects = getObjectList()
+    if not objects then return false end
+    for _, obj in ipairs(objects) do
+        local id = obj.itemid or obj.id or 0
+        if id == Ticket_ID then
+            local tx = math.floor(obj.pos.x / 32)
+            local ty = math.floor(obj.pos.y / 32)
+            findPath(tx, ty)
+            sleep(800)
+            return true
+        end
+    end
+    return false
+end
+
+function Warp(worldName)
+    if WorldCheck(worldName) then return true end
+    for attempt = 1, 3 do
+        sendMsg("`2Warping to `#" .. worldName .. " (" .. attempt .. "/3)")
+        growtopia.warpTo(worldName)
+        sleep(DELAY.Warp)
+        if WorldCheck(worldName) then
+            return true
+        end
+        sleep(2000)
+    end
+    sendMsg("`4Failed to warp to `#" .. worldName)
+    return false
+end
+
+function Refill_Ticket()
+    if Inventory(Ticket_ID) > 0 then return true end
+    
+    sendMsg("`9Ticket habis, refill...")
+    
+    if not Warp(Storage_World) then
+        state.paused = true
+        return false
+    end
+    sleep(2000)
+    
+    DropItemsInStorage()
+    
+    if not Take_Item() then
+        state.paused = true
+        return false
+    end
+    
+    sleep(1000)
+    if Inventory(Ticket_ID) <= 0 then
+        state.paused = true
+        return false
+    end
+    
+    if not Warp(Carnival_World) then
+        state.paused = true
+        return false
+    end
+    
+    sendMsg("`2Refill selesai")
+    return true
+end
+
+-- =============================================
+-- HOOK DROP OFFSET
+-- =============================================
+function Hook(var)
+    if var.v1 == "OnTextOverlay" and var.v2 then
+        if var.v2:find("You can't") then
+            if state.dropOffset < state.maxOffset then
+                state.dropOffset = state.dropOffset + 1
+            end
+        end
+    end
+    return false
+end
+AddHook(Hook, "OnVariant")
+
+-- =============================================
+-- MAIN LOOP
+-- =============================================
+sendMsg("`2Death Race Started")
+
+while true do
+    while state.paused do
+        sleep(1000)
+    end
+
+    if not WorldCheck(Carnival_World) then
+        if not Warp(Carnival_World) then
+            state.paused = true
+            sleep(5000)
+        end
+    end
+
+    if Inventory(Ticket_ID) <= 0 then
+        if not Refill_Ticket() then
+            state.paused = true
+            sleep(5000)
+        end
+    end
+
+    -- GAMEPLAY DEATH RACE
+    if not isAt(PORTAL) then
+        moveTo(PORTAL)
+    end
+
+    if isAt(PORTAL) then
+        growtopia.enter(PORTAL[1], PORTAL[2])
+        sleep(1000)
+    end
+
+    local start = os.clock() * 1000
+    local timeout = 15000
+    local detected = false
+
+    while (os.clock() * 1000 - start) < timeout do
+        local p = getPos()
+        if not p then
+            sleep(200)
+        else
+            if p.x == CHECKPOINT[1] and p.y == CHECKPOINT[2] then
+                -- Bergerak ke WAIT_TARGET (30,11) dulu
+                sendMsg("`9Di checkpoint, menuju 30,11...")
+                while not isAt(WAIT_TARGET) do
+                    findPath(WAIT_TARGET[1], WAIT_TARGET[2])
+                    sleep(500)
+                end
+                sendMsg("`9Sampai di 30,11, menuju finish...")
+                findPath(TARGET[1], TARGET[2])
+                sleep(800)
+                break
+            end
+
+            if p.x == EXIT[1] and p.y == EXIT[2] then
+                detected = true
+                break
+            end
+
+            if p.x == PORTAL[1] and p.y == PORTAL[2] then
+                detected = true
+                break
+            end
+        end
+        sleep(200)
+    end
+
+    if not detected then
+        sleep(500)
+    end
+
+    sleep(500)
+    sleep(DELAY.Loop)
+end
